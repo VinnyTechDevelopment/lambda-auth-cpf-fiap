@@ -1,0 +1,71 @@
+<?php
+
+/**
+ * SUGESTÃO — não faz parte deste repositório de infra, é só um ponto de
+ * partida pra colar em app/Presentation/Http/Middleware/ no repositório
+ * tech-challenge-fiap.
+ *
+ * Valida o JWT separado emitido pela Lambda lambda-auth-cpf. Não usa o guard
+ * "api"/jwt-auth existente (que resolve App\Models\User) — este token
+ * representa um Customer, não um User de staff.
+ *
+ * Requer a lib firebase/php-jwt (composer require firebase/php-jwt), mais
+ * leve que subir o tymon/jwt-auth para um segundo segredo/guard.
+ *
+ * Registrar em bootstrap/app.php (Laravel 13) ou routes/api.php como
+ * middleware de rota (ex.: 'auth.customer') nas rotas que devem aceitar
+ * apenas clientes autenticados por CPF.
+ */
+
+namespace App\Presentation\Http\Middleware;
+
+use Closure;
+use Firebase\JWT\JWT;
+use Firebase\JWT\Key;
+use Illuminate\Http\Request;
+
+class AuthenticateCustomerJwt
+{
+    public function handle(Request $request, Closure $next)
+    {
+        $header = $request->header('Authorization', '');
+
+        if (! str_starts_with($header, 'Bearer ')) {
+            return response()->json(['message' => 'Token não informado.'], 401);
+        }
+
+        $token = substr($header, 7);
+
+        try {
+            $decoded = JWT::decode(
+                $token,
+                new Key(config('services.customer_jwt.secret'), 'HS256')
+            );
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'Token inválido ou expirado.'], 401);
+        }
+
+        if (($decoded->type ?? null) !== 'customer') {
+            return response()->json(['message' => 'Tipo de token inválido para esta rota.'], 401);
+        }
+
+        // Disponibiliza o id/document do customer pro resto da request,
+        // sem precisar carregar um model User inexistente para esse fluxo.
+        $request->attributes->set('customer_id', $decoded->sub);
+        $request->attributes->set('customer_document', $decoded->document);
+
+        return $next($request);
+    }
+}
+
+/*
+ * config/services.php precisa de:
+ *
+ *   'customer_jwt' => [
+ *       'secret' => env('CUSTOMER_JWT_SECRET'),
+ *   ],
+ *
+ * E o ConfigMap/Secret do Kubernetes (repositório tech-challenge-fiap,
+ * infra/secrets.tf) precisa expor CUSTOMER_JWT_SECRET com o MESMO valor
+ * usado em var.customer_jwt_secret aqui no lambda-auth-cpf.
+ */

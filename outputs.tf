@@ -15,3 +15,8 @@ output "lambda_function_name" {
 output "lambda_security_group_id" {
   value = aws_security_group.lambda.id
 }
+
+output "app_proxy_base_url" {
+  description = "Base do API Gateway pra chamar qualquer rota autenticada da app principal (ex.: <base>/api/customer/me), protegida pelo Lambda authorizer"
+  value       = aws_apigatewayv2_api.this.api_endpoint
+}

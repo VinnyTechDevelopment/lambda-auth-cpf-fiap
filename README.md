@@ -37,21 +37,32 @@ O JWT emitido aqui usa um segredo próprio (`CUSTOMER_JWT_SECRET`) e **não** é
 - Uma Lambda Node.js 20 dentro da VPC (mesmas subnets privadas do EKS), usando a `LabRole` do AWS Academy (`role = var.lab_role_arn`, sem criar IAM role nova).
 - Um API Gateway HTTP API com a rota `POST /auth/cpf` apontando pra essa Lambda.
 - Um security group próprio pra Lambda (só egress — ela não recebe conexão de rede diretamente, é invocada pelo serviço Lambda).
+- A **rota autenticada da API principal**: `ANY /{proxy+}`, protegida por um Lambda authorizer, repassando pra app Laravel no EKS (ver seção abaixo).
 
-## O que ainda falta (próximo passo)
+## Rota autenticada da API principal (API Gateway → EKS)
 
-As **rotas autenticadas** da API principal (`rotas autenticadas` no diagrama — Cliente → API Gateway → EKS) ainda não têm uma integração aqui. Falta decidir entre:
-- **VPC Link** do API Gateway apontando pro NLB interno do Service Laravel (mantém tráfego privado dentro da VPC); ou
-- uma rota curinga simples (`ANY /{proxy+}`) apontando pro LoadBalancer público que o `app.tf` já cria.
+Qualquer chamada que não seja `POST /auth/cpf` cai na rota curinga `ANY /{proxy+}`, que:
 
-Isso muda se o Service `postech-app` deveria continuar `LoadBalancer` público ou virar `internal` — ver a nota equivalente no `README-MIGRACAO.md` do repositório da aplicação.
+1. Passa primeiro pelo **Lambda authorizer** (`authorizer.tf`, função `customer-jwt-authorizer`) — ele lê o header `Authorization: Bearer <token>`, valida a assinatura HS256 com `CUSTOMER_JWT_SECRET` (mesmo segredo usado por `auth_cpf`) e confere `type === "customer"`. Sem token válido, a requisição nem chega no backend (`401`, resposta simples `isAuthorized: false`).
+2. Se autorizada, o API Gateway repassa (`HTTP_PROXY`) pro NLB público do Service `postech-app`, criado pelo repositório `tech-challenge-fiap`.
+
+Exemplo: `GET <api_endpoint>/api/customer/me` com `Authorization: Bearer <token da /auth/cpf>` chega em `GET /api/customer/me` na app Laravel, que valida o mesmo token de novo com o middleware `AuthenticateCustomerJwt` (dupla checagem — authorizer no Gateway, guard na aplicação).
+
+**Decisão**: rota proxy pública em vez de VPC Link — mais simples e rápida de aplicar no AWS Academy (VPC Link exigiria trocar o Service Laravel pra `internal` e provisionar mais um recurso). Quem protege a rota é o authorizer, não a topologia de rede.
+
+**Por que não o "JWT authorizer" nativo do API Gateway?** Ele só valida tokens RS256 via JWKS de um IdP (Cognito, Auth0 etc.). O token da Lambda `auth_cpf` é HS256 com segredo compartilhado, sem IdP — por isso a validação é feita numa Lambda authorizer própria.
+
+**Passo manual necessário**: como este repositório é aplicado *antes* do `tech-challenge-fiap` (que só existe depois que `infra-kubernetes` e `infra-database` já rodaram), o NLB da app ainda não existe no primeiro apply daqui. `var.app_backend_domain` começa vazio. Depois que `tech-challenge-fiap` for aplicado, rode `make k8s-urls` lá, pegue o hostname do NLB (ex.: `xxxxx.elb.us-east-1.amazonaws.com`) e configure o secret `APP_BACKEND_DOMAIN` neste repositório (sem porta, sem `http://`) — o próximo push em `main` (ou um `workflow_dispatch`) já aplica a rota apontando pro backend certo.
 
 ## Build e deploy
 
-O CI (`.github/workflows/deploy.yml`) roda `npm ci --production` dentro de `src/` antes do `terraform apply` — o `data.archive_file` empacota `src/` (já com `node_modules`) num zip que vira o código da Lambda. Para rodar local:
+O CI (`.github/workflows/deploy.yml`) roda `npm ci --production` dentro de `src/` e de `src-authorizer/` antes do `terraform apply` — cada `data.archive_file` empacota seu diretório (já com `node_modules`) num zip que vira o código de cada Lambda. `pull_request` só faz `terraform plan`; `push` em `main` e `workflow_dispatch` aplicam de verdade (`terraform apply -auto-approve`) — automático a partir de agora, desde que os secrets do Academy (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_SESSION_TOKEN`) estejam atualizados na organização do GitHub.
+
+Para rodar local:
 
 ```bash
 cd src && npm ci --production && cd ..
+cd src-authorizer && npm ci --production && cd ..
 
 terraform init \
   -backend-config="bucket=SEU_BUCKET" \
@@ -72,4 +83,8 @@ lab_role_arn    = "arn:aws:iam::123456789012:role/LabRole"
 
 db_password         = "..."   # igual ao infra-database
 customer_jwt_secret = "..."   # gerar um valor novo, ex.: openssl rand -base64 48
+
+# Preencher só depois do primeiro apply do tech-challenge-fiap (ver seção
+# "Rota autenticada da API principal" acima):
+app_backend_domain = ""
 ```

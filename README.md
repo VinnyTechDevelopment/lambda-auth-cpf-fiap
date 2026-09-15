@@ -21,15 +21,15 @@ Resposta (200):
 }
 ```
 
-`422` se o CPF for inválido (formato/dígitos), `404` se não existir cliente com aquele `document`.
+`422` se o CPF for inválido (formato/dígitos), `404` se não existir cliente com aquele `document`, `403` se o cliente existir mas estiver com `status != active`.
 
 ## Decisão importante: guard separada
 
 O JWT emitido aqui usa um segredo próprio (`CUSTOMER_JWT_SECRET`) e **não** é aceito pela guard `api`/jwt-auth que a API Laravel já usa hoje — aquela resolve `App\Models\User` (staff), e um cliente identificado por CPF não é um `User` cadastrado. Ver `docs/CustomerJwtMiddleware.php.example` para o middleware que precisa ser adicionado no repositório `tech-challenge-fiap` pra validar esse token separado. Isso é só uma sugestão de código — não faz parte do Terraform deste repositório.
 
-## Suposições que precisam de validação
+## Suposições confirmadas
 
-- A tabela `customers` tem uma coluna `document` (string, 14 chars, formato `000.000.000-00`) e uma coluna `id`. Só isso foi confirmado — se `CustomerModel` tiver outras colunas relevantes pra devolver na resposta/claims, ajustar `src/index.js`.
+- A tabela `customers` tem `id`, `document` (string, 14 chars, formato `000.000.000-00`) e `status` (`enum('active','inactive')`, default `active` — adicionado via migration no repositório `tech-challenge-fiap`). `src/index.js` consulta as três e bloqueia com `403` quando o cliente não está `active`.
 - `db_username`/`db_password` aqui precisam ser idênticos aos do repositório `infra-database` (mesmo usuário do RDS).
 
 ## O que este repositório cria
@@ -45,6 +45,16 @@ As **rotas autenticadas** da API principal (`rotas autenticadas` no diagrama —
 - uma rota curinga simples (`ANY /{proxy+}`) apontando pro LoadBalancer público que o `app.tf` já cria.
 
 Isso muda se o Service `postech-app` deveria continuar `LoadBalancer` público ou virar `internal` — ver a nota equivalente no `README-MIGRACAO.md` do repositório da aplicação.
+
+## Testes
+
+```bash
+cd src
+npm install   # (não --production, precisa do jest)
+npm test
+```
+
+Cobre `cpf.js` (formato/dígito verificador) e `index.js` (400/422/404/403/200/500), mockando `mysql2/promise`.
 
 ## Build e deploy
 

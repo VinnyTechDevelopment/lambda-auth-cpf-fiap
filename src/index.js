@@ -52,11 +52,8 @@ exports.handler = async (event) => {
   let rows;
   try {
     const db = getPool();
-    // ATENÇÃO: ajustar os campos selecionados aqui conforme o restante das
-    // colunas reais de `customers` (este exemplo assume só id e document,
-    // que foram os únicos confirmados).
     [rows] = await db.execute(
-      "SELECT id, document FROM customers WHERE document = ? LIMIT 1",
+      "SELECT id, document, status FROM customers WHERE document = ? LIMIT 1",
       [document]
     );
   } catch (err) {
@@ -69,6 +66,11 @@ exports.handler = async (event) => {
   }
 
   const customer = rows[0];
+
+  if (customer.status !== "active") {
+    return response(403, { message: "Cliente inativo." });
+  }
+
   const ttl = Number(process.env.CUSTOMER_JWT_TTL || 3600);
 
   const token = jwt.sign(

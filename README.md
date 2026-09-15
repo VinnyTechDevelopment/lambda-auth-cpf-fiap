@@ -2,6 +2,20 @@
 
 Function Serverless que autentica um cliente pelo CPF: recebe o CPF, valida o formato/dígitos verificadores, consulta a tabela `customers` (coluna `document`) no RDS e devolve um JWT.
 
+## Arquitetura
+
+```mermaid
+flowchart LR
+    Cliente -->|"POST /auth/cpf"| GW["API Gateway (HTTP API)"]
+    GW --> Lambda["Lambda auth_cpf\n(Node.js 20, dentro da VPC)"]
+    Lambda -->|"SELECT id, document, status\nFROM customers"| RDS[("RDS MySQL\ninfra-database")]
+    Lambda -->|"JWT assinado\n(CUSTOMER_JWT_SECRET)"| Cliente
+    IK["infra-kubernetes"] -.->|"vpc_id / private_subnet_ids"| Lambda
+    ID["infra-database"] -.->|"rds_address / rds_port / db_name"| Lambda
+```
+
+Documentação da API: [`openapi.yaml`](./openapi.yaml) (único endpoint, `POST /auth/cpf`).
+
 ## Endpoint
 
 ```

@@ -1,6 +1,6 @@
 const mysql = require("mysql2/promise");
 const jwt = require("jsonwebtoken");
-const { onlyDigits, format, isValidCpf } = require("./cpf");
+const { onlyDigits, isValidCpf } = require("./cpf");
 
 // Conexão fora do handler para ser reaproveitada entre invocações "quentes"
 // da mesma execution environment (padrão recomendado para Lambda + RDS).
@@ -47,7 +47,10 @@ exports.handler = async (event) => {
     return response(422, { message: "CPF inválido." });
   }
 
-  const document = format(onlyDigits(rawCpf));
+  // O Value Object Document.php (lado Laravel) remove toda pontuação antes
+  // de persistir — a coluna `document` guarda só dígitos (ex.: "52998224725"),
+  // nunca "529.982.247-25". Consultar formatado aqui nunca dava match.
+  const document = onlyDigits(rawCpf);
 
   let rows;
   try {

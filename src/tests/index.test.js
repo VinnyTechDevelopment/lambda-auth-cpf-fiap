@@ -77,6 +77,18 @@ test("retorna 200 com token quando cliente está ativo", async () => {
   expect(decoded.type).toBe("customer");
 });
 
+test("consulta o banco com o CPF sem pontuação, não formatado", async () => {
+  // Document.php (lado Laravel) guarda só dígitos — consultar formatado
+  // ("529.982.247-25") nunca daria match e sempre devolveria 404.
+  mockExecute.mockResolvedValue([
+    [{ id: "c1", document: VALID_CPF, status: "active" }],
+  ]);
+  const handler = loadHandler();
+  await handler(buildEvent({ cpf: FORMATTED_CPF }));
+
+  expect(mockExecute).toHaveBeenCalledWith(expect.any(String), [VALID_CPF]);
+});
+
 test("retorna 500 quando a consulta ao banco falha", async () => {
   mockExecute.mockRejectedValue(new Error("conn refused"));
   const handler = loadHandler();

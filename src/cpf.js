@@ -1,7 +1,8 @@
-// Valida CPF: aceita tanto "000.000.000-00" quanto "00000000000" na entrada,
-// mas sempre devolve o formato "000.000.000-00" (14 chars), que é o que a
-// coluna `document` da tabela `customers` espera, segundo o Value Object
-// Document.php do lado Laravel.
+// Valida CPF: aceita tanto "000.000.000-00" quanto "00000000000" na entrada.
+// `format()` existe pra exibição/mensagens — NÃO usar o resultado dela pra
+// consultar a coluna `document`: o Value Object Document.php (lado Laravel)
+// remove toda pontuação antes de persistir, então o banco guarda só dígitos
+// ("52998224725"), nunca "529.982.247-25" (ver index.js).
 
 function onlyDigits(value) {
   return String(value || "").replace(/\D/g, "");

@@ -3,6 +3,8 @@ name: Deploy lambda-auth-cpf
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
   workflow_dispatch: {}
 
 permissions:
@@ -21,6 +23,7 @@ jobs:
       TF_VAR_lab_role_arn: ${{ secrets.LAB_ROLE_ARN }}
       TF_VAR_db_password: ${{ secrets.DB_PASSWORD }}
       TF_VAR_customer_jwt_secret: ${{ secrets.CUSTOMER_JWT_SECRET }}
+      TF_VAR_app_backend_domain: ${{ secrets.APP_BACKEND_DOMAIN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -28,8 +31,12 @@ jobs:
         with:
           node-version: "20"
 
-      - name: Instalar dependências da Lambda
+      - name: Instalar dependências da Lambda (auth_cpf)
         working-directory: src
+        run: npm ci --production
+
+      - name: Instalar dependências da Lambda (authorizer)
+        working-directory: src-authorizer
         run: npm ci --production
 
       - uses: hashicorp/setup-terraform@v3
@@ -52,5 +59,5 @@ jobs:
         run: terraform plan -no-color
 
       - name: Terraform Apply
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' || github.event_name == 'push'
         run: terraform apply -auto-approve

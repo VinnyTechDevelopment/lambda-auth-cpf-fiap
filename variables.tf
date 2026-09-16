@@ -49,3 +49,16 @@ variable "customer_jwt_ttl_seconds" {
   type        = number
   default     = 3600
 }
+
+# --- Rota proxy pra app principal ---
+
+variable "app_backend_domain" {
+  description = "Hostname do NLB público do Service postech-app no repositório tech-challenge-fiap — obtido via 'make k8s-urls' lá DEPOIS que esse repositório for aplicado pela primeira vez. Como este repositório (lambda-auth-cpf) é aplicado ANTES do tech-challenge-fiap na ordem documentada, esse valor começa vazio e precisa ser preenchido manualmente depois, num segundo apply."
+  type        = string
+  default     = ""
+}
+
+variable "app_backend_port" {
+  type    = number
+  default = 8080
+}

@@ -1,0 +1,55 @@
+openapi: 3.0.3
+info:
+  title: lambda-auth-cpf
+  description: >
+    Function Serverless que autentica um cliente pelo CPF, exposta via API Gateway.
+    Repositório de infraestrutura/código da Lambda — não é a API principal do Tech Challenge
+    (essa está em tech-challenge-fiap/openapi.yaml).
+  version: "1.0.0"
+paths:
+  /auth/cpf:
+    post:
+      summary: Autentica um cliente pelo CPF e emite um JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cpf]
+              properties:
+                cpf:
+                  type: string
+                  example: "111.444.777-35"
+                  description: Aceita com ou sem pontuação. Alias "document" também é aceito.
+      responses:
+        "200":
+          description: Cliente ativo — token emitido
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  token_type:
+                    type: string
+                    example: Bearer
+                  expires_in:
+                    type: integer
+                    example: 3600
+                  customer:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+        "400":
+          description: Corpo da requisição inválido ou campo "cpf" ausente
+        "422":
+          description: CPF com formato ou dígito verificador inválido
+        "404":
+          description: Nenhum cliente encontrado com esse CPF
+        "403":
+          description: Cliente encontrado, mas com status diferente de "active"
+        "500":
+          description: Falha inesperada (ex.: banco indisponível)

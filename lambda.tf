@@ -14,9 +14,9 @@ resource "aws_lambda_function" "auth_cpf" {
   filename         = data.archive_file.lambda_package.output_path
   source_code_hash = data.archive_file.lambda_package.output_base64sha256
 
-  handler = "index.handler"
-  runtime = "nodejs20.x"
-  timeout = 10
+  handler     = "index.handler"
+  runtime     = "nodejs20.x"
+  timeout     = 10
   memory_size = 256
 
   vpc_config {
@@ -26,13 +26,10 @@ resource "aws_lambda_function" "auth_cpf" {
 
   environment {
     variables = {
-      DB_HOST             = data.terraform_remote_state.database.outputs.rds_address
-      DB_PORT              = tostring(data.terraform_remote_state.database.outputs.rds_port)
-      DB_NAME              = data.terraform_remote_state.database.outputs.db_name
-      DB_USERNAME          = var.db_username
-      DB_PASSWORD          = var.db_password
-      CUSTOMER_JWT_SECRET  = var.customer_jwt_secret
-      CUSTOMER_JWT_TTL     = tostring(var.customer_jwt_ttl_seconds)
+      OS_SERVICE_URL      = var.app_backend_domain != "" ? "http://${var.app_backend_domain}:${var.app_backend_port}" : ""
+      INTERNAL_API_TOKEN  = var.internal_api_token
+      CUSTOMER_JWT_SECRET = var.customer_jwt_secret
+      CUSTOMER_JWT_TTL    = tostring(var.customer_jwt_ttl_seconds)
     }
   }
 

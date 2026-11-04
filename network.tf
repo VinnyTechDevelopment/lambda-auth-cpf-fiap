@@ -18,6 +18,6 @@ resource "aws_security_group" "lambda" {
   }
 }
 
-# Nota: o security group do RDS (repositório infra-database) já libera a
-# porta 3306 para todo o CIDR da VPC, então a Lambda (que roda dentro da
-# mesma VPC) já consegue conectar sem precisar de uma regra adicional aqui.
+# Fase 4: a Lambda não acessa mais o RDS (consulta o os-service pelo
+# endpoint interno). Ela continua na VPC só para sair pela NAT Gateway com
+# IP fixo; o SG não precisa de regra de ingress.

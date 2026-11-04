@@ -17,6 +17,6 @@ output "lambda_security_group_id" {
 }
 
 output "app_proxy_base_url" {
-  description = "Base do API Gateway pra chamar qualquer rota autenticada da app principal (ex.: <base>/api/customer/me), protegida pelo Lambda authorizer"
+  description = "Base do API Gateway na frente dos 3 microsserviços (os, billing, execution) — usar como PUBLIC_API_URL do billing-service"
   value       = aws_apigatewayv2_api.this.api_endpoint
 }

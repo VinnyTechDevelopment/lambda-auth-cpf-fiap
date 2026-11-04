@@ -26,16 +26,6 @@ variable "lab_role_arn" {
 # --- Banco ---
 # username/password precisam ser os mesmos configurados no infra-database
 
-variable "db_username" {
-  type    = string
-  default = "techchallenge"
-}
-
-variable "db_password" {
-  type      = string
-  sensitive = true
-}
-
 # --- JWT ---
 
 variable "customer_jwt_secret" {
@@ -61,4 +51,28 @@ variable "app_backend_domain" {
 variable "app_backend_port" {
   type    = number
   default = 8080
+}
+
+variable "billing_backend_domain" {
+  description = "Hostname do NLB do billing-service (output load_balancer_hostname do billing-service-fiap). Vazio = rotas /api/billing não são criadas."
+  type        = string
+  default     = ""
+}
+
+variable "execution_backend_domain" {
+  description = "Hostname do NLB do execution-service (output load_balancer_hostname do execution-service-fiap). Vazio = rotas /api/catalog e /api/execution não são criadas."
+  type        = string
+  default     = ""
+}
+
+variable "staff_jwt_secret" {
+  description = "JWT_SECRET do os-service: o authorizer aceita tokens de funcionário além dos de cliente."
+  type        = string
+  sensitive   = true
+}
+
+variable "internal_api_token" {
+  description = "Token do endpoint interno do os-service (/api/internal/customers/by-document) usado pela Lambda de CPF."
+  type        = string
+  sensitive   = true
 }

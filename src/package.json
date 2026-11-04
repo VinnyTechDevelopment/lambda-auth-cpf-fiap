@@ -7,8 +7,7 @@
     "test": "jest"
   },
   "dependencies": {
-    "jsonwebtoken": "^9.0.2",
-    "mysql2": "^3.11.0"
+    "jsonwebtoken": "^9.0.2"
   },
   "devDependencies": {
     "jest": "^29.7.0"

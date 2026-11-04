@@ -28,6 +28,7 @@ resource "aws_lambda_function" "customer_jwt_authorizer" {
   environment {
     variables = {
       CUSTOMER_JWT_SECRET = var.customer_jwt_secret
+      STAFF_JWT_SECRET    = var.staff_jwt_secret
     }
   }
 

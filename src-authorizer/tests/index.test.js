@@ -72,4 +72,43 @@ describe("customer_jwt_authorizer", () => {
     const result = await handler({ identitySource: [`Bearer ${token}`] });
     expect(result.isAuthorized).toBe(true);
   });
+
+  describe("token de funcionário (emitido pelo os-service)", () => {
+    const STAFF_SECRET = "staff-secret";
+
+    beforeAll(() => {
+      process.env.STAFF_JWT_SECRET = STAFF_SECRET;
+    });
+
+    afterAll(() => {
+      delete process.env.STAFF_JWT_SECRET;
+    });
+
+    test("token de funcionário válido é autorizado como staff", async () => {
+      const token = jwt.sign({ sub: 3, prv: "abc" }, STAFF_SECRET, { algorithm: "HS256", expiresIn: 60 });
+      const result = await handler(eventWithAuth(`Bearer ${token}`));
+
+      expect(result.isAuthorized).toBe(true);
+      expect(result.context.principalType).toBe("staff");
+      expect(result.context.staffId).toBe("3");
+    });
+
+    test("token com type=customer assinado com o segredo de funcionário é negado", async () => {
+      const token = jwt.sign({ sub: 3, type: "customer" }, STAFF_SECRET, { algorithm: "HS256" });
+      const result = await handler(eventWithAuth(`Bearer ${token}`));
+      expect(result.isAuthorized).toBe(false);
+    });
+
+    test("token de funcionário sem subject é negado", async () => {
+      const token = jwt.sign({ role: "x" }, STAFF_SECRET, { algorithm: "HS256" });
+      const result = await handler(eventWithAuth(`Bearer ${token}`));
+      expect(result.isAuthorized).toBe(false);
+    });
+
+    test("token de cliente continua com principalType customer", async () => {
+      const token = jwt.sign({ sub: 9, type: "customer" }, SECRET, { algorithm: "HS256" });
+      const result = await handler(eventWithAuth(`Bearer ${token}`));
+      expect(result.context.principalType).toBe("customer");
+    });
+  });
 });

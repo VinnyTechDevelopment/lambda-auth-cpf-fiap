@@ -1,25 +1,10 @@
-const mysql = require("mysql2/promise");
 const jwt = require("jsonwebtoken");
 const { onlyDigits, isValidCpf } = require("./cpf");
 
-// Conexão fora do handler para ser reaproveitada entre invocações "quentes"
-// da mesma execution environment (padrão recomendado para Lambda + RDS).
-let pool;
-
-function getPool() {
-  if (!pool) {
-    pool = mysql.createPool({
-      host: process.env.DB_HOST,
-      port: Number(process.env.DB_PORT || 3306),
-      user: process.env.DB_USERNAME,
-      password: process.env.DB_PASSWORD,
-      database: process.env.DB_NAME,
-      connectionLimit: 2, // Lambda = um handler por vez, não precisa de pool grande
-      connectTimeout: 5000,
-    });
-  }
-  return pool;
-}
+// Fase 4 — a Lambda NÃO acessa mais o banco do os-service diretamente
+// ("nenhum serviço pode acessar diretamente o banco de outro serviço").
+// O cliente é consultado no endpoint interno do os-service, protegido por
+// um token compartilhado (X-Internal-Token).
 
 function response(statusCode, body) {
   return {
@@ -27,6 +12,27 @@ function response(statusCode, body) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   };
+}
+
+async function findCustomer(document) {
+  const baseUrl = (process.env.OS_SERVICE_URL || "").replace(/\/$/, "");
+  const res = await fetch(`${baseUrl}/api/internal/customers/by-document/${document}`, {
+    headers: {
+      Accept: "application/json",
+      "X-Internal-Token": process.env.INTERNAL_API_TOKEN || "",
+    },
+    signal: AbortSignal.timeout(Number(process.env.OS_SERVICE_TIMEOUT_MS || 5000)),
+  });
+
+  if (res.status === 404) {
+    return null;
+  }
+
+  if (!res.ok) {
+    throw new Error(`os-service respondeu HTTP ${res.status}`);
+  }
+
+  return res.json();
 }
 
 exports.handler = async (event) => {
@@ -47,28 +53,19 @@ exports.handler = async (event) => {
     return response(422, { message: "CPF inválido." });
   }
 
-  // O Value Object Document.php (lado Laravel) remove toda pontuação antes
-  // de persistir — a coluna `document` guarda só dígitos (ex.: "52998224725"),
-  // nunca "529.982.247-25". Consultar formatado aqui nunca dava match.
   const document = onlyDigits(rawCpf);
 
-  let rows;
+  let customer;
   try {
-    const db = getPool();
-    [rows] = await db.execute(
-      "SELECT id, document, status FROM customers WHERE document = ? LIMIT 1",
-      [document]
-    );
+    customer = await findCustomer(document);
   } catch (err) {
-    console.error("Erro ao consultar o banco:", err);
-    return response(500, { message: "Erro interno ao consultar o cliente." });
+    console.error("Erro ao consultar o os-service:", err);
+    return response(502, { message: "Erro ao consultar o cliente." });
   }
 
-  if (!rows || rows.length === 0) {
+  if (!customer) {
     return response(404, { message: "Cliente não encontrado para este CPF." });
   }
-
-  const customer = rows[0];
 
   if (customer.status !== "active") {
     return response(403, { message: "Cliente inativo." });

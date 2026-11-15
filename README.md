@@ -1,6 +1,8 @@
 # lambda-auth-cpf
 
-Function Serverless que autentica um cliente pelo CPF: recebe o CPF, valida o formato/dígitos verificadores, consulta a tabela `customers` (coluna `document`) no RDS e devolve um JWT.
+Function Serverless que autentica um cliente pelo CPF e o **API Gateway** que é a porta de entrada única dos 3 microsserviços da Fase 4 (os-service, billing-service, execution-service).
+
+> **Fase 4:** a Lambda **não acessa mais o RDS** do os-service ("nenhum serviço acessa o banco de outro"). Ela consulta o endpoint interno `GET /api/internal/customers/by-document/{cpf}` do os-service, protegido pelo header `X-Internal-Token`. O authorizer passou a aceitar o **JWT de cliente ou de funcionário**, e o gateway roteia por prefixo para cada microsserviço.
 
 ## Arquitetura
 
@@ -8,11 +10,28 @@ Function Serverless que autentica um cliente pelo CPF: recebe o CPF, valida o fo
 flowchart LR
     Cliente -->|"POST /auth/cpf"| GW["API Gateway (HTTP API)"]
     GW --> Lambda["Lambda auth_cpf\n(Node.js 20, dentro da VPC)"]
-    Lambda -->|"SELECT id, document, status\nFROM customers"| RDS[("RDS MySQL\ninfra-database")]
+    Lambda -->|"GET /api/internal/customers/by-document\n(X-Internal-Token)"| OS["os-service (EKS)"]
     Lambda -->|"JWT assinado\n(CUSTOMER_JWT_SECRET)"| Cliente
     IK["infra-kubernetes"] -.->|"vpc_id / private_subnet_ids"| Lambda
-    ID["infra-database"] -.->|"rds_address / rds_port / db_name"| Lambda
+    GW -->|"/api/* (authorizer)"| OS
+    GW -->|"/api/billing/* (authorizer, exceto links públicos e webhook)"| BI["billing-service (EKS)"]
+    GW -->|"/api/catalog/*, /api/execution/* (authorizer)"| EX["execution-service (EKS)"]
 ```
+
+### Rotas do API Gateway (Fase 4)
+
+| Rota | Backend | Autorização |
+|---|---|---|
+| `POST /auth/cpf` | Lambda auth_cpf | pública |
+| `POST /api/auth/login`, `POST /api/auth/register` | os-service | pública |
+| `ANY /{proxy+}` | os-service | authorizer (cliente ou funcionário) |
+| `ANY /api/billing/{proxy+}` | billing-service | authorizer |
+| `GET /api/billing/quotes/{token}/approve` · `/reject`, `POST …/decision` | billing-service | pública (link do e-mail do cliente) |
+| `POST /api/billing/webhooks/mercadopago` | billing-service | pública (assinatura `x-signature` validada no serviço) |
+| `POST /api/billing/payments/{paymentId}/simulate` | billing-service | pública (só funciona com gateway `fake`) |
+| `ANY /api/catalog/{proxy+}`, `ANY /api/execution/{proxy+}` | execution-service | authorizer |
+
+Cada backend é o NLB do respectivo Service no EKS: secrets `APP_BACKEND_DOMAIN`, `BILLING_BACKEND_DOMAIN` e `EXECUTION_BACKEND_DOMAIN`, obtidos no output `load_balancer_hostname` de cada repositório. Enquanto um deles está vazio, as rotas daquele serviço não são criadas. A integração usa `overwrite:path = $request.path`, o que preserva o path original.
 
 Documentação da API: [`openapi.yaml`](./openapi.yaml) (único endpoint, `POST /auth/cpf`).
 
@@ -43,8 +62,8 @@ O JWT emitido aqui usa um segredo próprio (`CUSTOMER_JWT_SECRET`) e **não** é
 
 ## Suposições confirmadas
 
-- A tabela `customers` tem `id`, `document` (string, 14 chars, formato `000.000.000-00`) e `status` (`enum('active','inactive')`, default `active` — adicionado via migration no repositório `tech-challenge-fiap`). `src/index.js` consulta as três e bloqueia com `403` quando o cliente não está `active`.
-- `db_username`/`db_password` aqui precisam ser idênticos aos do repositório `infra-database` (mesmo usuário do RDS).
+- O endpoint interno do os-service devolve `{id, document, status}`; `src/index.js` bloqueia com `403` quando o cliente não está `active`.
+- `INTERNAL_API_TOKEN` precisa ser idêntico ao configurado no os-service (secret de organização).
 
 ## O que este repositório cria
 
@@ -76,7 +95,7 @@ npm install   # (não --production, precisa do jest)
 npm test
 ```
 
-Cobre `cpf.js` (formato/dígito verificador) e `index.js` (400/422/404/403/200/500), mockando `mysql2/promise`.
+Cobre `cpf.js` (formato/dígito verificador) e `index.js` (400/422/404/403/502/200), mockando o `fetch` ao os-service. O authorizer (`src-authorizer`) tem testes para token de cliente e de funcionário. O workflow roda os dois (`npx jest --coverage`) antes do deploy.
 
 ## Build e deploy
 
@@ -105,10 +124,13 @@ aws_region      = "us-east-1"
 tf_state_bucket = "SEU-NOME-UNICO-DE-BUCKET"
 lab_role_arn    = "arn:aws:iam::123456789012:role/LabRole"
 
-db_password         = "..."   # igual ao infra-database
 customer_jwt_secret = "..."   # gerar um valor novo, ex.: openssl rand -base64 48
+staff_jwt_secret    = "..."   # = JWT_SECRET do os-service
+internal_api_token  = "..."   # = INTERNAL_API_TOKEN do os-service
 
 # Preencher só depois do primeiro apply do tech-challenge-fiap (ver seção
 # "Rota autenticada da API principal" acima):
-app_backend_domain = ""
+app_backend_domain       = ""
+billing_backend_domain   = ""
+execution_backend_domain = ""
 ```
